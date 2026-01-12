@@ -1,6 +1,14 @@
 import struct
 import re
 from source_data_handler import SourceDataHandler
+import time
+
+
+def get_now_timestamp():
+    EPOCH_OFFSET = 11644473600
+    now_unix = time.time()
+    filetime_long = int((now_unix + EPOCH_OFFSET) * 10000000)
+    return filetime_long
 
 
 class HeroLoadout:
@@ -13,14 +21,15 @@ class HeroLoadout:
         # Stores offsets for hero-level fields
         self.offsets = offsets
 
-    def add_preset(self, index, name, vessel_id, relics, offset_dict, counter_val):
+    def add_preset(self, idx, name, vessel_id, relics, offset_dict, counter_val, timestamp):
         self.presets.append({
             "index": index,
             "name": name,
             "vessel_id": vessel_id,
             "relics": relics,
             "offsets": offset_dict,
-            "counter": counter_val
+            "counter": counter_val,
+            "timestamp": timestamp
         })
 
 
@@ -124,8 +133,9 @@ class VesselParser:
                 "hero_id": p_start + 1,
                 "counter": p_start + 3,
                 "name": p_start + 4,
-                "vessel_id": p_start + 44, # 4 + 36 + 4 padding
+                "vessel_id": p_start + 44,  # 4 + 36 + 4 padding
                 "relics": p_start + 48,
+                "timestamp": p_start + 72  # not sure
             }
             
             cursor += 1
@@ -141,7 +151,10 @@ class VesselParser:
             cursor += 4
             
             relics = struct.unpack_from("<6I", self.data, cursor)
-            cursor += 24 + 8 # Relics + Unknown
+            cursor += 24  # Relics
+            
+            timestamp = struct.unpack_from("<Q", self.data, cursor)[0]  # not sure
+            cursor += 8
             
             if h_id in heroes:
                 heroes[h_id].add_preset(preset_index, name, v_id, relics, p_offsets, counter_val)
@@ -189,6 +202,7 @@ class VesselParser:
                     print(f"      Counter: {p.get('counter', 'N/A'):>2}      (At: 0x{p_off['counter']:06X})")
                     print(f"      Vessel ID: {p['vessel_id']:<8} (At: 0x{p_off['vessel_id']:06X})")
                     print(f"      Relics: [{relics_str}] (At: 0x{p_off['relics']:06X})")
+                    print(f"      Timestamp: {p.get('timestamp', 'N/A')} (At: 0x{p_off['timestamp']:06X})")
             else:
                 print("  - No Custom Presets found.")
         
@@ -229,6 +243,9 @@ class VesselModifier:
             # Update Name (if modified, ensuring it's 36 bytes UTF-16)
             name_bytes = p["name"].encode('utf-16le').ljust(36, b'\x00')[:36]
             self.data[p_off["name"]:p_off["name"] + 36] = name_bytes
+            
+            # Update Timestamp
+            struct.pack_into("<Q", self.data, p_off["timestamp"], p["timestamp"])
 
     def set_value(self, offset: int, fmt: str, value):
         """
@@ -288,7 +305,10 @@ class LoadoutHandler:
             "name": self.all_presets[-1]["offsets"]["base"] + 80 + 4 if self.all_presets else self.parser.base_offset + 120 * 10 + 28 * 70 + 4 + 4,
             "vessel_id": self.all_presets[-1]["offsets"]["base"] + 80 + 44 if self.all_presets else self.parser.base_offset + 120 * 10 + 28 * 70 + 4 + 44,
             "relics": self.all_presets[-1]["offsets"]["base"] + 80 + 48 if self.all_presets else self.parser.base_offset + 120 * 10 + 28 * 70 + 4 + 48,
+            "timestamp": self.all_presets[-1]["offsets"]["base"] + 80 + 72 if self.all_presets else self.parser.base_offset + 120 * 10 + 28 * 70 + 4 + 72,
         }
+        
+        new_timestamp = get_now_timestamp()
 
         new_preset = {
             "index": len(self.all_presets),
@@ -296,6 +316,7 @@ class LoadoutHandler:
             "vessel_id": vessel_id,
             "relics": relics,
             "counter": 0,
+            "timestamp": new_timestamp,
             "offsets": new_preset_offsets
         }
         for preset in self.all_presets:
