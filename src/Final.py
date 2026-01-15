@@ -2521,7 +2521,7 @@ class SaveEditorGUI:
                 return
             ga_handles[idx] = 0
             try:
-                loadout_handler.replace_preset_relic(data, preset['hero_type'], idx, 0, preset_index=preset['index'])
+                loadout_handler.replace_preset_relic(preset['hero_type'], idx, 0, preset_index=preset['index'])
                 slot_relic_data[idx] = None
                 update_slot_display()
                 update_details_panel()
@@ -2784,7 +2784,7 @@ class SaveEditorGUI:
 
             # Write to file
             try:
-                loadout_handler.replace_preset_relic(data, preset['hero_type'], idx, new_ga,
+                loadout_handler.replace_preset_relic(preset['hero_type'], idx, new_ga,
                                                      preset_index=preset['index'])
                 slot_relic_data[idx] = relic_data
                 update_slot_display()
@@ -3442,8 +3442,7 @@ class SaveEditorGUI:
             return False
         vessel_id = loadout_handler.get_vessel_id(hero_type, vessel_slot)
         try:
-            loadout_handler.replace_vessel_relic(data, hero_type, vessel_id, slot_index, new_ga)
-            
+            loadout_handler.replace_vessel_relic(hero_type, vessel_id, slot_index, new_ga)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to replace relic: {e}")
             return False
@@ -4044,6 +4043,7 @@ class SaveEditorGUI:
         # parse_vessel_assignments(data)
         loadout_handler.reload_data(data)
         loadout_handler.reload_ga_relics(ga_relic)
+        # loadout_handler.display_results()
 
         # Update relic checker with new ga_relic and recalculate illegal relics
         if relic_checker:

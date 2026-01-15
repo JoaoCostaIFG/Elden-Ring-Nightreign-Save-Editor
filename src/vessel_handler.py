@@ -56,6 +56,8 @@ class VesselParser:
 
     def parse(self):
         heroes = {}
+        self.relic_ga_hero_map = {}
+        self.base_offset = None
         magic_pattern = re.escape(bytes.fromhex("C2000300002C000003000A0004004600"))
         marker = re.escape(bytes.fromhex("64000000"))
 
@@ -124,15 +126,16 @@ class VesselParser:
 
             cursor += 4
             relics = list(struct.unpack_from("<6I", self.user_data, cursor))
-            for r in relics:
-                if (r & 0xF0000000) == self.ITEM_TYPE_RELIC and r != 0:
-                    if r not in self.relic_ga_hero_map:
-                        self.relic_ga_hero_map[r] = set()
-                    self.relic_ga_hero_map[r].add(hero_type)
 
             v_meta = self.game_data.get_vessel_data(v_id)
             target_hero = v_meta.get("hero_type") if v_meta else None
             assigned_id = last_hero_type if target_hero == 11 else target_hero
+
+            for r in relics:
+                if (r & 0xF0000000) == self.ITEM_TYPE_RELIC and r != 0:
+                    if r not in self.relic_ga_hero_map:
+                        self.relic_ga_hero_map[r] = set()
+                    self.relic_ga_hero_map[r].add(assigned_id)
 
             if assigned_id in heroes:
                 heroes[assigned_id].vessels.append({
@@ -168,7 +171,7 @@ class VesselParser:
             }
 
             cursor += 1
-            h_id = struct.unpack_from("<H", self.user_data, cursor)[0]
+            h_id = int(struct.unpack_from("<H", self.user_data, cursor)[0])
             cursor += 2
             counter_val = struct.unpack_from("<B", self.user_data, cursor)[0]
             cursor += 1
@@ -239,6 +242,15 @@ class VesselParser:
                     print(f"      Timestamp: {p.get('timestamp', 'N/A')} (At: 0x{p_off['timestamp']:06X})")
             else:
                 print("  - No Custom Presets found.")
+
+        # print ga_hero_type_map
+        print(f"\n{'='*80}")
+        print(f"{'Relic GA Handle to Hero Type Map':^80}")
+        print(f"{'='*80}")
+        for r_ga in sorted(self.relic_ga_hero_map.keys()):
+            heroes = self.relic_ga_hero_map[r_ga]
+            heroes_str = ", ".join([str(h) for h in heroes])
+            print(f"0x{r_ga:08X}: [{heroes_str}]")
 
         print(f"\n{'='*80}")
 
@@ -362,14 +374,15 @@ class Validator:
                         raise ValueError(f"Color mismatch in relic slot {relic_index+1}.")
                     # Check duplicate relics in vessel
                     if 0 <= relic_index < 2:
-                        for r_af_idx, relic_after in enumerate(vessel["relics"][relic_index + 1:2]):
+                        for idx, relic_after in enumerate(vessel["relics"][relic_index + 1:3]):
+                            r_af_idx = relic_index + 1 + idx
                             if relic_after != 0 and relic == relic_after:
-                                ValueError(f"Relic can't be duplicated in normal slots. Slot:{r_af_idx+1}")
+                                raise ValueError(f"Relic is duplicated with slot: {r_af_idx+1}")
                     if 3 <= relic_index < 5:
-                        for r_af_idx, relic_after in enumerate(vessel["relics"][relic_index + 1:5]):
+                        for idx, relic_after in enumerate(vessel["relics"][relic_index + 1:]):
+                            r_af_idx = relic_index + 1 + idx
                             if relic_after != 0 and relic == relic_after:
-                                ValueError(f"Relic can't be duplicated in deep slots. Slot:{r_af_idx+1}")
-               
+                                raise ValueError(f"Relic is duplicated with slot: {r_af_idx+1}")  
                 else:
                     raise ValueError("Invalid item type")
         return True
@@ -488,6 +501,7 @@ class LoadoutHandler:
             raise ValueError("Invalid relic index")
 
     def equip_preset(self, hero_type: int, preset_index: int):
+        # self.reload_data(user_data)
         if hero_type not in range(1, 11):
             raise ValueError("Invalid hero type")
         if hero_type not in self.heroes:
@@ -499,7 +513,7 @@ class LoadoutHandler:
         else:
             raise ValueError("Invalid preset index")
 
-    def push_preset(self, user_data: bytearray, hero_type: int, vessel_id: int, relics: list[int], name: str):
+    def push_preset(self, hero_type: int, vessel_id: int, relics: list[int], name: str):
         """
         Append a new preset to the specified hero's loadout.
         
@@ -518,7 +532,7 @@ class LoadoutHandler:
         :returns: return the modified data as immutable bytes.
         :rtype: bytes
         """
-        self.reload_data(user_data)
+        # self.reload_data(user_data)
         # Check Preset Capacity
         if len(self.all_presets) > 100:
             raise LoadoutHandler.PresetsCapacityFullError("Maximum preset capacity reached.")
@@ -559,9 +573,9 @@ class LoadoutHandler:
         self.validator.auto_adjust_cur_equipment(self.heroes, hero_type)
         self.update_hero_loadout(hero_type)
 
-    def replace_vessel_relic(self, user_data: bytearray, hero_type: int, vessel_id: int,
+    def replace_vessel_relic(self, hero_type: int, vessel_id: int,
                              relic_index: int, new_relic_ga):
-        self.reload_data(user_data)
+        # self.reload_data(user_data)
         _new_vessel = None
         vessel_index = 0
         for idx, vessel in enumerate(self.heroes[hero_type].vessels):
@@ -578,9 +592,9 @@ class LoadoutHandler:
                 self.validator.auto_adjust_cur_equipment(self.heroes, hero_type)
             self.update_hero_loadout(hero_type)
 
-    def replace_preset_relic(self, user_data: bytearray, hero_type: int, relic_index: int, new_relic_ga,
+    def replace_preset_relic(self, hero_type: int, relic_index: int, new_relic_ga,
                              hero_preset_index: int = -1, preset_index: int = -1):
-        self.reload_data(user_data)
+        # self.reload_data(user_data)
         if hero_preset_index < 0 and preset_index < 0:
             raise ValueError("hero_preset_index or preset_index should be provided")
         if hero_preset_index >= 0 and preset_index >= 0:
