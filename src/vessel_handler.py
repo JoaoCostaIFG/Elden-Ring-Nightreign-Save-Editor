@@ -489,7 +489,11 @@ class LoadoutHandler:
             raise ValueError("Hero not found. This shouldn't happen. Save file may be corrupted.")
         if preset_index < len(self.heroes[hero_type].presets):
             self.heroes[hero_type].cur_preset_idx = preset_index
-            self.heroes[hero_type].cur_vessel_id = self.heroes[hero_type].presets[preset_index]["vessel_id"]
+            self.heroes[hero_type].cur_vessel_id = self.all_presets[preset_index]["vessel_id"]
+            for vessel in self.heroes[hero_type].vessels:
+                if vessel["vessel_id"] == self.heroes[hero_type].cur_vessel_id:
+                    vessel["relics"] = deepcopy(self.all_presets[preset_index]["relics"])
+                    break
             self.update_hero_loadout(hero_type)
         else:
             raise ValueError("Invalid preset index")
