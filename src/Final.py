@@ -19,6 +19,7 @@ from vessel_handler import LoadoutHandler
 
 
 # Global variables
+gaprint_mutex = threading.Lock() # mutex to prevent simultaneously concurrent updates to parsed data
 os.chdir(WORKING_DIR)
 
 # Data storage - SourceDataHandler and LoadoutHandler are lazy-initialized to speed up startup
@@ -326,22 +327,34 @@ def parse_inventory_acquisition_order(data_type, items_end_offset):
 
 def gaprint(data_type):
     global ga_relic, ga_items
-    ga_items = []
-    ga_relic = []
     start_offset = 0x14
     slot_count = 5120
     items, end_offset = parse_items(data_type, start_offset, slot_count)
 
-    for item in items:
-        type_bits = item.gaitem_handle & 0xF0000000
-        ga_items.append((item.gaitem_handle, item.item_id, item.effect_1,
-                        item.effect_2, item.effect_3, item.sec_effect1,
-                        item.sec_effect2, item.sec_effect3, item.offset, item.size))
+    gaprint_mutex.acquire()
+    ga_items = []
+    ga_relic = []
+    try:
+        for item in items:
+            type_bits = item.gaitem_handle & 0xF0000000
+            parsed_item = (
+                item.gaitem_handle,
+                item.item_id,
+                item.effect_1,
+                item.effect_2,
+                item.effect_3,
+                item.sec_effect1,
+                item.sec_effect2,
+                item.sec_effect3,
+                item.offset,
+                item.size,
+            )
+            ga_items.append(parsed_item)
 
-        if type_bits == ITEM_TYPE_RELIC:
-            ga_relic.append((item.gaitem_handle, item.item_id, item.effect_1,
-                           item.effect_2, item.effect_3, item.sec_effect1,
-                           item.sec_effect2, item.sec_effect3, item.offset, item.size))
+            if type_bits == ITEM_TYPE_RELIC:
+                ga_relic.append(parsed_item)
+    finally:
+        gaprint_mutex.release()
 
     # Parse inventory section to get acquisition order
     parse_inventory_acquisition_order(data_type, end_offset)
@@ -1703,7 +1716,8 @@ class SaveEditorGUI:
                 self.root.after(0, lambda: finish_task(True))
             except Exception as e:
                 # Task failed: Close window and show error in main thread
-                self.root.after(0, lambda: finish_task(False, str(e)))
+                error_msg = str(e)
+                self.root.after(0, lambda: finish_task(False, error_msg))
 
         def finish_task(success, err_msg=None):
             # Release the GUI lock and close popup
