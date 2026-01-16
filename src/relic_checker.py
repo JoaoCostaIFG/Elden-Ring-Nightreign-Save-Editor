@@ -309,7 +309,7 @@ class RelicChecker:
         for their permuted slot's specific pool.
         """
         # Skip if relic is actually illegal (that's a different issue)
-        if not invalid_reason:
+        if not invalid_reason and invalid_reason != InvalidReason.NONE:
             invalid_reason = self.check_invalidity(relic_id, effects)
         if invalid_reason != InvalidReason.NONE:
             return False
